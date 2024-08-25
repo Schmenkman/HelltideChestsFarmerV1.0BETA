@@ -1,4 +1,5 @@
 
+
 local MinHeap = {}
 
 MinHeap.__index = MinHeap
@@ -121,6 +122,10 @@ function MinHeap:siftDown(index)
 
 end
 
+function explorer:set_custom_target(target)
+    console.print("Setting custom target.")
+    target_position = target
+end
 
 
 function MinHeap:contains(value)
