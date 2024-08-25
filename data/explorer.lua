@@ -1,162 +1,118 @@
 
-
 local MinHeap = {}
-
 MinHeap.__index = MinHeap
 
-
-
 function MinHeap.new(compare)
-
     --console.print("Creating new MinHeap.")
-
     return setmetatable({heap = {}, compare = compare or function(a, b) return a < b end}, MinHeap)
-
 end
-
-
 
 function MinHeap:push(value)
-
     --console.print("Pushing value into MinHeap.")
-
     table.insert(self.heap, value)
-
     self:siftUp(#self.heap)
-
 end
-
-
 
 function MinHeap:pop()
-
     --console.print("Popping value from MinHeap.")
-
     local root = self.heap[1]
-
     self.heap[1] = self.heap[#self.heap]
-
     table.remove(self.heap)
-
     self:siftDown(1)
-
     return root
-
 end
-
-
 
 function MinHeap:peek()
-
     --console.print("Peeking value from MinHeap.")
-
     return self.heap[1]
-
 end
-
-
 
 function MinHeap:empty()
-
     --console.print("Checking if MinHeap is empty.")
-
     return #self.heap == 0
-
 end
-
-
 
 function MinHeap:siftUp(index)
-
     --console.print("Sifting up in MinHeap.")
-
     local parent = math.floor(index / 2)
-
     while index > 1 and self.compare(self.heap[index], self.heap[parent]) do
-
         self.heap[index], self.heap[parent] = self.heap[parent], self.heap[index]
-
         index = parent
-
         parent = math.floor(index / 2)
-
     end
-
 end
-
-
 
 function MinHeap:siftDown(index)
-
     --console.print("Sifting down in MinHeap.")
-
     local size = #self.heap
-
     while true do
-
         local smallest = index
-
         local left = 2 * index
-
         local right = 2 * index + 1
-
         if left <= size and self.compare(self.heap[left], self.heap[smallest]) then
-
             smallest = left
-
         end
-
         if right <= size and self.compare(self.heap[right], self.heap[smallest]) then
-
             smallest = right
-
         end
-
         if smallest == index then break end
-
         self.heap[index], self.heap[smallest] = self.heap[smallest], self.heap[index]
-
         index = smallest
-
     end
-
 end
-
-function explorer:set_custom_target(target)
-    console.print("Setting custom target.")
-    target_position = target
-end
-
 
 function MinHeap:contains(value)
-
     --console.print("Checking if MinHeap contains value.")
-
     for _, v in ipairs(self.heap) do
-
         if v == value then return true end
-
     end
-
     return false
-
 end
 
-local enabled = false
+local utils = require "core.utils"
+local enums = require "data.enums"
+local settings = require "core.settings"
+local tracker = require "core.tracker"
+local explorer = {
+    enabled = false,
+    is_task_running = false, --added to prevent boss dead pathing 
+}
 local explored_areas = {}
 local target_position = nil
 local grid_size = 1.5            -- Size of grid cells in meters
-local exploration_radius = 7   -- Radius in which areas are considered explored
-local explored_buffer = 0      -- Buffer around explored areas in meters
+local exploration_radius = 10   -- Radius in which areas are considered explored
+local explored_buffer = 2      -- Buffer around explored areas in meters
 local max_target_distance = 120 -- Maximum distance for a new target
 local target_distance_states = {120, 40, 20, 5}
 local target_distance_index = 1
-local unstuck_target_distance = 5 -- Maximum distance for an unstuck target
-local stuck_threshold = 4      -- Seconds before the character is considered "stuck"
+local unstuck_target_distance = 15 -- Maximum distance for an unstuck target
+local stuck_threshold = 10      -- Seconds before the character is considered "stuck"
 local last_position = nil
 local last_move_time = 0
 local last_explored_targets = {}
 local max_last_targets = 50
+
+-- Function to check and print pit start time and time spent in pit
+local function check_pit_time()
+    --console.print("Checking pit start time...")  -- Add this line for debugging
+    if tracker.pit_start_time > 0 then
+        local time_spent_in_pit = get_time_since_inject() - tracker.pit_start_time
+    else
+        --console.print("Pit start time is not set or is zero.")  -- Add this line for debugging
+    end
+end
+
+local function check_and_reset_dungeons()
+    --console.print("Executing check_and_reset_dungeons") -- Debug print
+    if tracker.pit_start_time > 0 then
+        local time_spent_in_pit = get_time_since_inject() - tracker.pit_start_time
+        local reset_time_threshold = settings.reset_time
+        if time_spent_in_pit > reset_time_threshold then
+            console.print("Time spent in pit is greater than " .. reset_time_threshold .. " seconds. Resetting all dungeons.")
+            reset_all_dungeons()
+        end
+    end
+end
 
 -- A* pathfinding variables
 local current_path = {}
@@ -166,28 +122,28 @@ local path_index = 1
 local exploration_mode = "unexplored" -- "unexplored" oder "explored"
 
 -- Richtung für den "explored" Modus
-
 local exploration_direction = { x = 10, y = 0 } -- Initiale Richtung (kann angepasst werden)
 
 -- Neue Variable für die letzte Bewegungsrichtung
 local last_movement_direction = nil
 
-local function enable()
-    enabled = true
-    console.print("Explorer module enabled.")
-end
-
--- Função para desabilitar o módulo de exploração
-local function disable()
-    enabled = false
-    console.print("Explorer module disabled.")
-end
-
-local function set_target(new_target)
-    target_position = new_target
+--ai fix for kill monsters path
+function explorer:clear_path_and_target()
+    --console.print("Clearing path and target.")
+    target_position = nil
     current_path = {}
     path_index = 1
 end
+
+local function calculate_distance(point1, point2)
+    --console.print("Calculating distance between points.")
+    if not point2.x and point2 then
+        return point1:dist_to_ignore_z(point2:get_position())
+    end
+    return point1:dist_to_ignore_z(point2)
+end
+
+
 
 --ai fix for stairs
 local function set_height_of_valid_position(point)
@@ -202,21 +158,14 @@ local function get_grid_key(point)
         math.floor(point:z() / grid_size)
 end
 
-local function calculate_distance(point1, point2)
-    --console.print("Calculating distance between points.")
-    if not point2.x and point2 then
-        return point1:dist_to_ignore_z(point2:get_position())
-    end
-    return point1:dist_to_ignore_z(point2)
-end
-
 local explored_area_bounds = {
     min_x = math.huge,
     max_x = -math.huge,
     min_y = math.huge,
     max_y = -math.huge,
+    min_z = math.huge,
+    max_z = math.huge
 }
-
 local function update_explored_area_bounds(point, radius)
     --console.print("Updating explored area bounds.")
     explored_area_bounds.min_x = math.min(explored_area_bounds.min_x, point:x() - radius)
@@ -243,17 +192,16 @@ end
 
 local function check_walkable_area()
     --console.print("Checking walkable area.")
-    if os.time() % 5 ~= 0 then return end  -- Only run every 5 seconds
+    if os.time() % 1 ~= 0 then return end  -- Only run every 5 seconds
 
     local player_pos = get_player_position()
-    local check_radius = 10 -- Überprüfungsradius in Metern
+    local check_radius = 15 -- Überprüfungsradius in Metern
 
     mark_area_as_explored(player_pos, exploration_radius)
 
     for x = -check_radius, check_radius, grid_size do
         for y = -check_radius, check_radius, grid_size do
             for z = -check_radius, check_radius, grid_size do -- Inclui z no loop
-
                 local point = vec3:new(
                     player_pos:x() + x,
                     player_pos:y() + y,
@@ -295,12 +243,12 @@ end
 
 local function is_near_wall(point)
     --console.print("Checking if point is near wall.")
-    local wall_check_distance = 1 -- Abstand zur Überprüfung von Wänden
+    local wall_check_distance = 2 -- Abstand zur Überprüfung von Wänden
     local directions = {
         { x = 1, y = 0 }, { x = -1, y = 0 }, { x = 0, y = 1 }, { x = 0, y = -1 },
         { x = 1, y = 1 }, { x = 1, y = -1 }, { x = -1, y = 1 }, { x = -1, y = -1 }
     }
-    
+
     for _, dir in ipairs(directions) do
         local check_point = vec3:new(
             point:x() + dir.x * wall_check_distance,
@@ -315,48 +263,8 @@ local function is_near_wall(point)
     return false
 end
 
-local function find_central_unexplored_target()
-    console.print("Finding central unexplored target.")
-    local player_pos = get_player_position()
-    local check_radius = max_target_distance
-    local unexplored_points = {}
-    local min_x, max_x, min_y, max_y = math.huge, -math.huge, math.huge, -math.huge
-
-    for x = -check_radius, check_radius, grid_size do
-        for y = -check_radius, check_radius, grid_size do
-            local point = vec3:new(
-                player_pos:x() + x,
-                player_pos:y() + y,
-                player_pos:z()
-            )
-
-            point = set_height_of_valid_position(point)
-
-            if utility.is_point_walkeable(point) and not is_point_in_explored_area(point) then
-                table.insert(unexplored_points, point)
-                min_x = math.min(min_x, point:x())
-                max_x = math.max(max_x, point:x())
-                min_y = math.min(min_y, point:y())
-                max_y = math.max(max_y, point:y())
-            end
-        end
-    end
-
-    if #unexplored_points == 0 then
-        return nil
-    end
-
-    local center_x = (min_x + max_x) / 2
-    local center_y = (min_y + max_y) / 2
-    local center = vec3:new(center_x, center_y, player_pos:z())
-    center = set_height_of_valid_position(center)
-
-    table.sort(unexplored_points, function(a, b)
-        return calculate_distance(a, center) < calculate_distance(b, center)
-    end)
-
-    return unexplored_points[1]
-end
+-- Removed the find_central_unexplored_target function
+-- It was previously located here
 
 local function find_random_explored_target()
     console.print("Finding random explored target.")
@@ -379,7 +287,7 @@ local function find_random_explored_target()
         end
     end
 
-    if #explored_points == 0 then
+    if #explored_points == 0 then   
         return nil
     end
 
@@ -409,18 +317,42 @@ local function add_to_last_targets(point)
     end
 end
 
+local function find_nearby_unexplored_point(center, radius)
+    local check_radius = max_target_distance
+    local player_pos = get_player_position()
+
+    for x = -check_radius, check_radius, grid_size do
+        for y = -check_radius, check_radius, grid_size do
+            local point = vec3:new(
+                center:x() + x,
+                center:y() + y,
+                center:z()
+            )
+
+            point = set_height_of_valid_position(point)
+
+            if utility.is_point_walkeable(point) and not is_point_in_explored_area(point) then
+                return point
+            end
+        end
+    end
+
+    return nil
+end
+
 local function find_explored_direction_target()
     console.print("Finding explored direction target.")
     local player_pos = get_player_position()
-    local max_attempts = 200
+    local max_attempts = 500
     local attempts = 0
     local best_target = nil
-    local best_distance = 0
+    local best_distance = math.huge -- Initialize to a large value to find the closest point
 
     while attempts < max_attempts do
+        attempts = attempts + 1
         local direction_vector = vec3:new(
-            exploration_direction.x * max_target_distance * 0.5 ,
-            exploration_direction.y * max_target_distance * 0.5,
+            exploration_direction.x * max_target_distance * 0.4,
+            exploration_direction.y * max_target_distance * 0.4,
             0
         )
         local target_point = player_pos + direction_vector
@@ -428,26 +360,36 @@ local function find_explored_direction_target()
 
         if utility.is_point_walkeable(target_point) and is_point_in_explored_area(target_point) then
             local distance = calculate_distance(player_pos, target_point)
-            if distance > best_distance and not is_in_last_targets(target_point) then
+            if distance < best_distance and not is_in_last_targets(target_point) then
                 best_target = target_point
                 best_distance = distance
+
+                -- Check for nearby unexplored points
+                local nearby_unexplored_point = find_nearby_unexplored_point(target_point, exploration_radius)
+                if nearby_unexplored_point then
+                    console.print("Nearby unexplored point found. Switching to unexplored mode.")
+                    exploration_mode = "unexplored"
+                    return nearby_unexplored_point
+                end
             end
+        else
+            --console.print("Attempt " .. attempts .. ": Target point is not walkable or not in explored area.")
         end
 
-        -- Ändere die Richtung leicht
-        local angle = math.atan2(exploration_direction.y, exploration_direction.x) + math.random() * math.pi / 2 - math.pi / 4
+        -- Change the direction slightly for the next attempt
+        local angle = math.atan2(exploration_direction.y, exploration_direction.x) + math.random() * math.pi / 4 - math.pi / 8
         exploration_direction.x = math.cos(angle)
         exploration_direction.y = math.sin(angle)
-        attempts = attempts + 1
     end
 
     if best_target then
         add_to_last_targets(best_target)
+        console.print("Found best target after " .. attempts .. " attempts.")
         return best_target
+    else
+        console.print("Could not find a valid explored target after " .. max_attempts .. " attempts.")
+        return nil
     end
-
-    console.print("Could not find a valid explored target after " .. max_attempts .. " attempts.")
-    return nil
 end
 
 local function find_unstuck_target()
@@ -478,6 +420,9 @@ local function find_unstuck_target()
     return nil
 end
 
+explorer.find_unstuck_target = find_unstuck_target
+
+
 local function find_target(include_explored)
     console.print("Finding target.")
     last_movement_direction = nil -- Reset the last movement direction
@@ -486,16 +431,17 @@ local function find_target(include_explored)
         return find_unstuck_target()
     else
         if exploration_mode == "unexplored" then
-            local unexplored_target = find_central_unexplored_target()
-            if unexplored_target then
-                return unexplored_target
-            else
+            -- Commented out the following lines
+            -- local unexplored_target = find_central_unexplored_target()
+            -- if unexplored_target then
+            --     return unexplored_target
+            -- else
                 exploration_mode = "explored"
                 console.print("No unexplored areas found. Switching to explored mode.")
                 last_explored_targets = {} -- Reset last targets when switching modes
-            end
+            -- end
         end
-        
+
         if exploration_mode == "explored" then
             local explored_target = find_explored_direction_target()
             if explored_target then
@@ -504,11 +450,12 @@ local function find_target(include_explored)
                 console.print("No valid explored targets found. Resetting exploration.")
                 reset_exploration()
                 exploration_mode = "unexplored"
-                return find_central_unexplored_target()
+                -- Return nil or adjust logic here to handle the absence of unexplored targets
+                -- You might want to return nil or handle it differently since you don't want `find_central_unexplored_target` to run
             end
         end
     end
-    
+
     return nil
 end
 
@@ -522,10 +469,9 @@ local function get_neighbors(point)
     --console.print("Getting neighbors of point.")
     local neighbors = {}
     local directions = {
-        { x = 1.2, y = 0 }, { x = -1.2, y = 0 }, { x = 0, y = 1.2 }, { x = 0, y = -1.2 },
-        { x = 1.2, y = 1.2 }, { x = 1.2, y = -1.2 }, { x = -1.2, y = 1.2 }, { x = -1.2, y = -1.2 }
+        { x = 1, y = 0 }, { x = -1, y = 0 }, { x = 0, y = 1 }, { x = 0, y = -1 },
+        { x = 1, y = 1 }, { x = 1, y = -1 }, { x = -1, y = 1 }, { x = -1, y = -1 }
     }
-    
     for _, dir in ipairs(directions) do
         local neighbor = vec3:new(
             point:x() + dir.x * grid_size,
@@ -536,13 +482,11 @@ local function get_neighbors(point)
         if utility.is_point_walkeable(neighbor) then
             if not last_movement_direction or
                 (dir.x ~= -last_movement_direction.x or dir.y ~= -last_movement_direction.y) then
-
                 table.insert(neighbors, neighbor)
             end
         end
     end
-    
-    -- Wenn keine anderen Optionen verfügbar sind, fügen Sie die entgegengesetzte Richtung hinzu
+
     if #neighbors == 0 and last_movement_direction then
         local back_direction = vec3:new(
             point:x() - last_movement_direction.x * grid_size,
@@ -554,7 +498,7 @@ local function get_neighbors(point)
             table.insert(neighbors, back_direction)
         end
     end
-    
+
     return neighbors
 end
 
@@ -581,8 +525,11 @@ local function reconstruct_path(came_from, current)
         local magnitude2 = math.sqrt(dir2.x^2 + dir2.y^2)
         local angle = math.acos(dot_product / (magnitude1 * magnitude2))
 
-        -- Keep points if the angle is greater than a threshold (e.g., 15 degrees)
-        if angle > math.rad(40) then
+        -- Use the angle from settings, converting degrees to radians
+        local angle_threshold = math.rad(settings.path_angle)
+
+        -- Keep points if the angle is greater than the threshold from settings
+        if angle > angle_threshold then
             table.insert(filtered_path, curr)
         end
     end
@@ -650,30 +597,36 @@ end
 
 local last_a_star_call = 0.0
 local function move_to_target()
+    if explorer.is_task_running then
+        return  -- Do not set a path if a task is running
+    end
+
     if target_position then
         local player_pos = get_player_position()
-
-        -- Check if the player is more than 20 meters away from the target position
-        if calculate_distance(player_pos, target_position) > 500 then -- era 20 coloquei 100
-            target_position = current_waypoint -- Use o waypoint atual
+        if calculate_distance(player_pos, target_position) > 500 then
+            target_position = find_target(false)
             current_path = {}
             path_index = 1
             return
         end
 
         if not current_path or #current_path == 0 or path_index > #current_path then
-            current_path = a_star(player_pos, target_position)
+            local current_core_time = get_time_since_inject()
             path_index = 1
+            current_path = nil
+            current_path = a_star(player_pos, target_position)
+            last_a_star_call = current_core_time
+
             if not current_path then
-                console.print("No path found to target. Using current waypoint as target.")
-                target_position = current_waypoint -- Use o waypoint atual
+                console.print("No path found to target. Finding new target.")
+                target_position = find_target(false)
                 return
             end
         end
 
-        local next_point = current_path[path_index+1] -- +1 because he dont walk anymore lol
+        local next_point = current_path[path_index]
         if next_point and not next_point:is_zero() then
-        pathfinder.request_move(next_point)
+            pathfinder.request_move(next_point)
         end
 
         if next_point and next_point.x and not next_point:is_zero() and calculate_distance(player_pos, next_point) < grid_size then
@@ -690,14 +643,32 @@ local function move_to_target()
             target_position = nil
             current_path = {}
             path_index = 1
-            
-            -- Não desabilita o módulo explorer quando o jogador alcançar o waypoint
-            disable()
-            -- Adicione esta linha para comunicar com o main.lua
-            _G.explorer_active = false
+
+            -- Check for nearby unexplored points when in explored mode
+            if exploration_mode == "explored" then
+                local nearby_unexplored_point = find_nearby_unexplored_point(player_pos, exploration_radius)
+                if nearby_unexplored_point then
+                    exploration_mode = "unexplored"
+                    target_position = nearby_unexplored_point
+                    console.print("Found nearby unexplored area. Switching back to unexplored mode.")
+                    last_explored_targets = {}
+                    current_path = nil
+                    path_index = 1
+                else
+                    -- If no unexplored points are found, continue with explored mode logic
+                    -- Commented out the following line
+                    -- local unexplored_target = find_central_unexplored_target()
+                    -- if unexplored_target then
+                    --     exploration_mode = "unexplored"
+                    --     target_position = unexplored_target
+                    --     console.print("Found new unexplored area. Switching back to unexplored mode.")
+                    --     last_explored_targets = {}
+                    -- end
+                end
+            end
         end
     else
-        target_position = current_waypoint -- Use o waypoint atual
+        target_position = find_target(false)
     end
 end
 
@@ -705,54 +676,111 @@ local function check_if_stuck()
     --console.print("Checking if character is stuck.")
     local current_pos = get_player_position()
     local current_time = os.time()
-    
-    if last_position and calculate_distance(current_pos, last_position) < 2 then -- estava 0.1 aumentei para 2
+
+    if last_position and calculate_distance(current_pos, last_position) < 0.1 then
         if current_time - last_move_time > stuck_threshold then
             return true
         end
     else
         last_move_time = current_time
     end
-    
+
     last_position = current_pos
-    
+
     return false
 end
 
-on_render(function()
-    if enabled then
+explorer.check_if_stuck = check_if_stuck
+
+function explorer:set_custom_target(target)
+    console.print("Setting custom target.")
+    target_position = target
+end
+
+-- Expose the move_to_target function
+function explorer:move_to_target()
+    move_to_target()
+end
+
+local last_call_time = 0.0
+local is_player_on_quest = false
+on_update(function()
+    if not settings.enabled then
+        return
+    end
+
+    if explorer.is_task_running then
+         return -- Don't run explorer logic if a task is running
+    end
+
+    local world = world.get_current_world()
+    if world then
+        local world_name = world:get_name()
+        if world_name:match("Sanctuary") or world_name:match("Limbo") then
+            return
+        end
+    end
+
+    --local auto_play_objective = auto_play.get_objective()
+    --local should_sell = auto_play_objective == objective.sell
+    --if should_sell then
+    --    return -- stop code here
+    --end
+
+    local current_core_time = get_time_since_inject()
+    if current_core_time - last_call_time > 0.45 then
+        last_call_time = current_core_time
+        is_player_on_quest = utils.player_on_quest(enums.quests.pit_ongoing) and settings.enabled
+        if not is_player_on_quest then
+            return
+        end
+
         check_walkable_area()
-        
         local is_stuck = check_if_stuck()
-        
         if is_stuck then
-            console.print("Character was stuck. Finding new target.")
+            console.print("Character was stuck. Finding new target and attempting revive")
             target_position = find_target(true)
             target_position = set_height_of_valid_position(target_position)
             last_move_time = os.time()
             current_path = {}
             path_index = 1
-        end
-        
-        move_to_target()
-        
-        if target_position then
-            graphics.text_3d("TARGET", target_position, 20, color_red(255))
-        end
 
-        if current_path then
-            for i, point in ipairs(current_path) do
-                local color = (i == path_index) and color_green(255) or color_yellow(255)
-                graphics.text_3d("PATH", point, 15, color)
+            local local_player = get_local_player()
+            if local_player and local_player:is_dead() then
+                revive_at_checkpoint()
             end
         end
-
-        graphics.text_2d("Mode: " .. exploration_mode, vec2:new(10, 10), 20, color_white(255))
     end
+
+    check_pit_time()
+    check_and_reset_dungeons() 
 end)
-return {
-    enable = enable,
-    disable = disable,
-    set_target = set_target,
-    -- outras funções que você deseja exportar
-}
+
+on_render(function()
+    
+    if not settings.enabled then
+        return
+    end
+
+    -- dont slide frames here so drawings feel smooth
+    if target_position then
+        if target_position.x then
+            graphics.text_3d("TARGET_1", target_position, 20, color_red(255))
+        else
+            if target_position and target_position:get_position() then
+                graphics.text_3d("TARGET_2", target_position:get_position(), 20, color_orange(255))
+            end
+        end
+    end
+
+    if current_path then
+        for i, point in ipairs(current_path) do
+            local color = (i == path_index) and color_green(255) or color_yellow(255)
+            graphics.text_3d("PATH_1", point, 15, color)
+        end
+    end
+
+    graphics.text_2d("Mode: " .. exploration_mode, vec2:new(10, 10), 20, color_white(255))
+end)
+
+return explorer

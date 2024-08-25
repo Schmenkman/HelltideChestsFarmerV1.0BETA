@@ -1,8 +1,8 @@
+
 -- Import menu elements
 local menu = require("menu")
 local revive = require("data.revive")
 local explorer = require("data.explorer")
-
 
 -- Função para randomizar waypoints
 local function randomize_waypoint(waypoint, max_offset)
@@ -60,7 +60,6 @@ local previous_player_pos = nil -- Variável para armazenar a posição anterior
 local function update_explorer_target()
     if explorer and current_waypoint then
         explorer.set_target(current_waypoint)
-        
     end
 end
 
@@ -150,8 +149,7 @@ local function moveToAndInteract(obj)
         previous_cinders_count = get_helltide_coin_cinders() -- Armazena o valor de cinders antes da interação
         return true
     elseif distance < moveThreshold then
-        explorer.set_custom_target(obj_pos)
-        explorer.move_to_target()
+        pathfinder.request_move(obj_pos)
         return false
     end
 end
@@ -304,8 +302,7 @@ local function pulse()
                     if current_time - last_movement_time > 5 then
                         console.print("Player stuck, using force_move_raw")
                     local randomized_waypoint = randomize_waypoint(current_waypoint)
-                    explorer.set_custom_target(randomized_waypoint)
-                    explorer.move_to_target()
+                    pathfinder.force_move_raw(randomized_waypoint)
                     last_movement_time = current_time
                 end
                 else
@@ -316,8 +313,7 @@ local function pulse()
 
                 if current_time > force_move_cooldown then
                     local randomized_waypoint = randomize_waypoint(current_waypoint)
-                    explorer.set_custom_target(randomized_waypoint)
-                    explorer.move_to_target()
+                    pathfinder.request_move(randomized_waypoint)
                 end
             end
         end
@@ -359,8 +355,7 @@ local function start_movement_and_check_cinders()
         if cinders_count == 0 then
             console.print("No cinders found. Stopping movement to teleport.")
             local player_pos = get_player_position() -- Pega a posição atual do jogador
-            explorer.set_custom_target(player_pos) -- Move o jogador para sua posição atual para interromper o movimento
-            explorer.move_to_target()
+            pathfinder.request_move(player_pos) -- Move o jogador para sua posição atual para interromper o movimento
             
             if not is_loading_screen() then -- Verifica se não está na tela de carregamento antes de teleportar
                 current_city_index = (current_city_index % #helltide_tps) + 1
@@ -416,7 +411,7 @@ on_update(function()
                     elseif os.clock() > next_teleport_attempt_time then -- Verifica se é hora de tentar teleporte novamente
                         console.print("Teleport failed, retrying...")
                         teleport_to_waypoint(helltide_tps[current_city_index].id)
-                        next_teleport_attempt_time = os.clock() + 20 -- Ajuste o tempo de espera se necessário
+                        next_teleport_attempt_time = os.clock() + 30 -- Ajuste o tempo de espera se necessário
                     end
                 end
             end
@@ -441,7 +436,7 @@ on_update(function()
                 current_city_index = (current_city_index % #helltide_tps) + 1
                 teleport_to_waypoint(helltide_tps[current_city_index].id)
                 teleporting = true
-                next_teleport_attempt_time = os.clock() + 10 -- Define a próxima tentativa de teleporte em 15 segundos
+                next_teleport_attempt_time = os.clock() + 15 -- Define a próxima tentativa de teleporte em 15 segundos
             end
         end
     end
