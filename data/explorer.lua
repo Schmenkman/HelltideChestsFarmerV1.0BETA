@@ -1,4 +1,3 @@
-
 local MinHeap = {}
 MinHeap.__index = MinHeap
 
@@ -72,7 +71,7 @@ end
 local utils = require "core.utils"
 local enums = require "data.enums"
 local settings = require "core.settings"
-local tracker = require "core.tracker"
+
 local explorer = {
     enabled = false,
     is_task_running = false, --added to prevent boss dead pathing 
@@ -93,6 +92,13 @@ local last_explored_targets = {}
 local max_last_targets = 50
 
 -- Function to check and print pit start time and time spent in pit
+
+local function set_target(new_target)
+    target_position = new_target
+    current_path = {}
+    path_index = 1
+end
+
 local function check_pit_time()
     --console.print("Checking pit start time...")  -- Add this line for debugging
     if tracker.pit_start_time > 0 then
@@ -692,13 +698,13 @@ end
 
 explorer.check_if_stuck = check_if_stuck
 
-function explorer:set_custom_target(target)
+function explorer.set_custom_target(target)
     console.print("Setting custom target.")
     target_position = target
 end
 
 -- Expose the move_to_target function
-function explorer:move_to_target()
+function explorer.move_to_target()
     move_to_target()
 end
 
@@ -730,11 +736,7 @@ on_update(function()
     local current_core_time = get_time_since_inject()
     if current_core_time - last_call_time > 0.45 then
         last_call_time = current_core_time
-        is_player_on_quest = utils.player_on_quest(enums.quests.pit_ongoing) and settings.enabled
-        if not is_player_on_quest then
-            return
-        end
-
+        
         check_walkable_area()
         local is_stuck = check_if_stuck()
         if is_stuck then

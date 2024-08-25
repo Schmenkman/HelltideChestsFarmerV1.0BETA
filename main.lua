@@ -149,7 +149,8 @@ local function moveToAndInteract(obj)
         previous_cinders_count = get_helltide_coin_cinders() -- Armazena o valor de cinders antes da interação
         return true
     elseif distance < moveThreshold then
-        pathfinder.request_move(obj_pos)
+        explorer.set_custom_target(obj_pos)
+        explorer.move_to_target()
         return false
     end
 end
@@ -278,7 +279,7 @@ local function pulse()
         local player_pos = get_player_position()
         local distance = get_distance(current_waypoint)
         
-        if distance < 2 then
+        if distance < 3 then
             if moving_backwards then
                 ni = ni - 1
             else
@@ -293,8 +294,6 @@ local function pulse()
                 if current_time - stuck_check_time > stuck_threshold then
                     console.print("Player stuck for 15 seconds, calling explorer module")
                     explorer.set_target(current_waypoint)
-                    explorer.enable()
-                    explorer_active = true
                     return
                 end
 
@@ -302,7 +301,8 @@ local function pulse()
                     if current_time - last_movement_time > 5 then
                         console.print("Player stuck, using force_move_raw")
                     local randomized_waypoint = randomize_waypoint(current_waypoint)
-                    pathfinder.force_move_raw(randomized_waypoint)
+                    explorer.set_custom_target(randomized_waypoint)
+                    explorer.move_to_target()
                     last_movement_time = current_time
                 end
                 else
@@ -313,7 +313,8 @@ local function pulse()
 
                 if current_time > force_move_cooldown then
                     local randomized_waypoint = randomize_waypoint(current_waypoint)
-                    pathfinder.request_move(randomized_waypoint)
+                    explorer.set_custom_target(randomized_waypoint)
+                    explorer.move_to_target()
                 end
             end
         end
@@ -355,7 +356,8 @@ local function start_movement_and_check_cinders()
         if cinders_count == 0 then
             console.print("No cinders found. Stopping movement to teleport.")
             local player_pos = get_player_position() -- Pega a posição atual do jogador
-            pathfinder.request_move(player_pos) -- Move o jogador para sua posição atual para interromper o movimento
+            explorer.set_custom_target(player_pos) -- Move o jogador para sua posição atual para interromper o movimento
+            explorer.move_to_target()
             
             if not is_loading_screen() then -- Verifica se não está na tela de carregamento antes de teleportar
                 current_city_index = (current_city_index % #helltide_tps) + 1
